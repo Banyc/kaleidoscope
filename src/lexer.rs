@@ -22,7 +22,7 @@ impl<'stream> Lexer<'stream> {
     pub async fn get_token(&mut self) -> Result<Token, LexerError> {
         // Skip any whitespace.
         while self.char.is_whitespace() {
-            self.read_char().await;
+            self.next_char().await;
         }
 
         // Collect the identifier.
@@ -31,7 +31,7 @@ impl<'stream> Lexer<'stream> {
             identifier.push(self.char);
 
             loop {
-                self.read_char().await;
+                self.next_char().await;
                 if self.char.is_alphanumeric() {
                     identifier.push(self.char);
                 } else {
@@ -52,7 +52,7 @@ impl<'stream> Lexer<'stream> {
             number.push(self.char);
 
             loop {
-                self.read_char().await;
+                self.next_char().await;
                 if self.char.is_numeric() || self.char == '.' {
                     number.push(self.char);
                 } else {
@@ -69,7 +69,7 @@ impl<'stream> Lexer<'stream> {
         // Skip comments.
         if self.char == '#' {
             loop {
-                self.read_char().await;
+                self.next_char().await;
                 if self.char == '\r' || self.char == '\n' || self.char == '\0' {
                     break;
                 }
@@ -85,15 +85,15 @@ impl<'stream> Lexer<'stream> {
 
         // Collect unknown token.
         let unknown = self.char;
-        self.read_char().await;
+        self.next_char().await;
         Ok(Token::Unknown(unknown))
     }
 
-    async fn read_char(&mut self) {
+    async fn next_char(&mut self) {
         match self.source.next().await {
             Some(char) => self.char = char,
             None => self.char = '\0',
-        };
+        }
     }
 }
 
