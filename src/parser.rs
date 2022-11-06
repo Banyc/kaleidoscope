@@ -4,7 +4,7 @@ use async_recursion::async_recursion;
 use lazy_static::lazy_static;
 
 use crate::{
-    ast::ExprAst,
+    ast::{ExprAst, FunctionAst, PrototypeAst},
     lexer::{CharStream, Lexer, LexerError},
     token::Token,
     token_src::TokenSource,
@@ -262,15 +262,110 @@ impl<'stream> Parser<'stream> {
         }
     }
 
-    async fn get_bin_op_precedence(bin_op: &str) -> Result<u8, ParserError> {
-        let Some(precedence) = BIN_OP_PRECEDENCE.get(bin_op) else {
-            return Err(ParserError::ParserError(format!(
-                "Unknown binary operator: {}.",
-                bin_op
-            )));
+    /// - ```text
+    ///   prototype
+    ///     ::= id '(' id* ')'
+    ///   ```
+    async fn parse_prototype(&mut self) -> Result<PrototypeAst, ParserError> {
+        let Token::Identifier(name) = self.take_token().await? else {
+            return Err(ParserError::ParserError(
+                "Expected function name in prototype.".to_string(),
+            ));
         };
 
-        Ok(*precedence)
+        // Eat '('.
+        let Token::Unknown('(') = self.take_token().await? else {
+            return Err(ParserError::ParserError(
+                "Expected '(' in prototype.".to_string(),
+            ));
+        };
+
+        let mut args = Vec::new();
+
+        loop {
+            match self.peek_token().await? {
+                Token::Unknown(')') => {
+                    // Eat ')'.
+                    self.take_token().await?;
+                    break;
+                }
+                Token::Identifier(_) => {
+                    let Token::Identifier(arg) = self.take_token().await? else {
+                        unreachable!();
+                    };
+                    args.push(arg);
+                }
+                _ => {
+                    return Err(ParserError::ParserError(
+                        "Expected ')' or argument name in prototype.".to_string(),
+                    ));
+                }
+            }
+        }
+
+        Ok(PrototypeAst { name, args })
+    }
+
+    /// - ```text
+    ///   definition ::= 'def' prototype expression
+    ///   ```
+    pub async fn parse_definition(&mut self) -> Result<FunctionAst, ParserError> {
+        // Eat 'def'.
+        let Token::Def = self.take_token().await? else {
+            return Err(ParserError::ParserError(
+                "Expected 'def' keyword.".to_string(),
+            ));
+        };
+
+        let prototype = self.parse_prototype().await?;
+        let body = self.parse_expression().await?;
+
+        Ok(FunctionAst { prototype, body })
+    }
+
+    /// - ```text
+    ///   external ::= 'extern' prototype
+    ///   ```
+    pub async fn parse_extern(&mut self) -> Result<PrototypeAst, ParserError> {
+        // Eat 'extern'.
+        let Token::Extern = self.take_token().await? else {
+            return Err(ParserError::ParserError(
+                "Expected 'extern' keyword.".to_string(),
+            ));
+        };
+
+        self.parse_prototype().await
+    }
+
+    /// - ```text
+    ///   toplevelexpr ::= expression
+    ///   ```
+    pub async fn parse_top_level_expr(&mut self) -> Result<FunctionAst, ParserError> {
+        let prototype = PrototypeAst {
+            name: "".to_string(),
+            args: Vec::new(),
+        };
+        let body = self.parse_expression().await?;
+
+        Ok(FunctionAst { prototype, body })
+    }
+
+    pub async fn parse_semicolon(&mut self) -> Result<(), ParserError> {
+        let Token::Unknown(';') = self.take_token().await? else {
+            return Err(ParserError::ParserError(
+                "Expected ';'.".to_string(),
+            ));
+        };
+        Ok(())
+    }
+
+    pub async fn parse_eof(&mut self) -> Result<(), ParserError> {
+        let Token::EOF = self.take_token().await? else {
+            return Err(ParserError::ParserError(
+                "Expected EOF.".to_string(),
+            ));
+        };
+        Ok(())
     }
 
     async fn take_token(&mut self) -> Result<Token, ParserError> {
@@ -308,6 +403,7 @@ mod tests {
         let task = async {
             let expr = parser.parse_number_expr().await.unwrap();
             assert_eq!(expr, ExprAst::Number(1.2));
+            parser.parse_eof().await.unwrap();
         };
 
         executor::block_on(task);
@@ -321,6 +417,7 @@ mod tests {
         let task = async {
             let expr = parser.parse_paren_expr().await.unwrap();
             assert_eq!(expr, ExprAst::Number(1.2));
+            parser.parse_eof().await.unwrap();
         };
 
         executor::block_on(task);
@@ -334,6 +431,7 @@ mod tests {
         let task = async {
             let expr = parser.parse_identifier_expr().await.unwrap();
             assert_eq!(expr, ExprAst::Variable("foo".to_string()));
+            parser.parse_eof().await.unwrap();
         };
 
         executor::block_on(task);
@@ -353,6 +451,7 @@ mod tests {
                     args: vec![],
                 }
             );
+            parser.parse_eof().await.unwrap();
         };
 
         executor::block_on(task);
@@ -372,6 +471,7 @@ mod tests {
                     args: vec![ExprAst::Number(1.2), ExprAst::Variable("x".to_string())],
                 }
             );
+            parser.parse_eof().await.unwrap();
         };
 
         executor::block_on(task);
@@ -385,6 +485,7 @@ mod tests {
         let task = async {
             let expr = parser.parse_primary().await.unwrap();
             assert_eq!(expr, ExprAst::Number(1.2));
+            parser.parse_eof().await.unwrap();
         };
 
         executor::block_on(task);
@@ -398,6 +499,7 @@ mod tests {
         let task = async {
             let expr = parser.parse_primary().await.unwrap();
             assert_eq!(expr, ExprAst::Number(1.2));
+            parser.parse_eof().await.unwrap();
         };
 
         executor::block_on(task);
@@ -411,6 +513,7 @@ mod tests {
         let task = async {
             let expr = parser.parse_primary().await.unwrap();
             assert_eq!(expr, ExprAst::Variable("foo".to_string()));
+            parser.parse_eof().await.unwrap();
         };
 
         executor::block_on(task);
@@ -440,6 +543,7 @@ mod tests {
                     }),
                 }
             );
+            parser.parse_eof().await.unwrap();
         };
 
         executor::block_on(task);
@@ -493,6 +597,135 @@ mod tests {
                     rhs: Box::new(ExprAst::Number(10.0)),
                 }
             );
+            parser.parse_eof().await.unwrap();
+        };
+
+        executor::block_on(task);
+    }
+
+    #[test]
+    fn test_parse_prototype_1() {
+        let mut char_stream = stream::iter("foo()".chars());
+        let mut parser = Parser::from_char_stream(&mut char_stream);
+
+        let task = async {
+            let proto = parser.parse_prototype().await.unwrap();
+            assert_eq!(
+                proto,
+                PrototypeAst {
+                    name: "foo".to_string(),
+                    args: vec![],
+                }
+            );
+            parser.parse_eof().await.unwrap();
+        };
+
+        executor::block_on(task);
+    }
+
+    #[test]
+    fn test_parse_prototype_2() {
+        let mut char_stream = stream::iter("foo(x y)".chars());
+        let mut parser = Parser::from_char_stream(&mut char_stream);
+
+        let task = async {
+            let proto = parser.parse_prototype().await.unwrap();
+            assert_eq!(
+                proto,
+                PrototypeAst {
+                    name: "foo".to_string(),
+                    args: vec!["x".to_string(), "y".to_string()],
+                }
+            );
+            parser.parse_eof().await.unwrap();
+        };
+
+        executor::block_on(task);
+    }
+
+    #[test]
+    fn test_parse_definition() {
+        let mut char_stream = stream::iter("def foo() 1".chars());
+        let mut parser = Parser::from_char_stream(&mut char_stream);
+
+        let task = async {
+            let def = parser.parse_definition().await.unwrap();
+            assert_eq!(
+                def,
+                FunctionAst {
+                    prototype: PrototypeAst {
+                        name: "foo".to_string(),
+                        args: vec![],
+                    },
+                    body: ExprAst::Number(1.0),
+                }
+            );
+            parser.parse_eof().await.unwrap();
+        };
+
+        executor::block_on(task);
+    }
+
+    #[test]
+    fn test_parse_extern() {
+        let mut char_stream = stream::iter("extern foo()".chars());
+        let mut parser = Parser::from_char_stream(&mut char_stream);
+
+        let task = async {
+            let proto = parser.parse_extern().await.unwrap();
+            assert_eq!(
+                proto,
+                PrototypeAst {
+                    name: "foo".to_string(),
+                    args: vec![],
+                }
+            );
+            parser.parse_eof().await.unwrap();
+        };
+
+        executor::block_on(task);
+    }
+
+    #[test]
+    fn test_parse_top_level_expr() {
+        let mut char_stream = stream::iter("1".chars());
+        let mut parser = Parser::from_char_stream(&mut char_stream);
+
+        let task = async {
+            let expr = parser.parse_top_level_expr().await.unwrap();
+            assert_eq!(
+                expr,
+                FunctionAst {
+                    prototype: PrototypeAst {
+                        name: "".to_string(),
+                        args: vec![],
+                    },
+                    body: ExprAst::Number(1.0),
+                }
+            );
+            parser.parse_eof().await.unwrap();
+        };
+
+        executor::block_on(task);
+    }
+
+    #[test]
+    fn test_escape_expression() {
+        let mut char_stream = stream::iter("1 + 2;".chars());
+        let mut parser = Parser::from_char_stream(&mut char_stream);
+
+        let task = async {
+            let expr = parser.parse_expression().await.unwrap();
+            assert_eq!(
+                expr,
+                ExprAst::Binary {
+                    op: "+".to_string(),
+                    lhs: Box::new(ExprAst::Number(1.0)),
+                    rhs: Box::new(ExprAst::Number(2.0)),
+                }
+            );
+            parser.parse_semicolon().await.unwrap();
+            parser.parse_eof().await.unwrap();
         };
 
         executor::block_on(task);
