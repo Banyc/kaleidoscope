@@ -3,7 +3,7 @@ use futures::{Stream, StreamExt};
 
 use crate::token::Token;
 
-type CharStream = dyn Stream<Item = char> + Unpin + Send;
+pub type CharStream = dyn Stream<Item = char> + Unpin + Send;
 
 /// - Learn more: <https://llvm.org/docs/tutorial/MyFirstLanguageFrontend/LangImpl01.html#the-lexer>
 pub struct Lexer<'stream> {
