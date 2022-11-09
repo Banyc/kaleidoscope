@@ -27,3 +27,11 @@ pub struct FunctionAst {
     pub prototype: PrototypeAst,
     pub body: ExprAst,
 }
+
+#[derive(Debug, PartialEq, Clone)]
+pub enum AnyAst {
+    Expr(ExprAst),
+    Prototype(PrototypeAst),
+    Function(FunctionAst),
+    Empty,
+}

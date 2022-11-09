@@ -4,7 +4,7 @@ use async_recursion::async_recursion;
 use lazy_static::lazy_static;
 
 use crate::{
-    ast::{ExprAst, FunctionAst, PrototypeAst},
+    ast::{AnyAst, ExprAst, FunctionAst, PrototypeAst},
     lexer::{CharStream, Lexer, LexerError},
     token::Token,
     token_src::TokenSource,
@@ -365,6 +365,47 @@ impl<'stream> Parser<'stream> {
                 "Expected EOF.".to_string(),
             ));
         };
+        Ok(())
+    }
+
+    /// - ```text
+    ///   any ::= definition | external | toplevelexpr | ';'
+    ///   ```
+    pub async fn parse_any(&mut self) -> Result<AnyAst, ParserError> {
+        match self.peek_token().await? {
+            Token::Def => Ok(AnyAst::Function(self.parse_definition().await?)),
+            Token::Extern => Ok(AnyAst::Prototype(self.parse_extern().await?)),
+            Token::Unknown(';') => {
+                self.parse_semicolon().await?;
+                Ok(AnyAst::Empty)
+            }
+            Token::EOF => {
+                self.parse_eof().await?;
+                Ok(AnyAst::Empty)
+            }
+            _ => {
+                // Assume top-level expression.
+                Ok(AnyAst::Function(self.parse_top_level_expr().await?))
+            }
+        }
+    }
+
+    pub async fn skip_until_semicolon(&mut self) -> Result<(), ParserError> {
+        loop {
+            match self.peek_token().await? {
+                Token::Unknown(';') => {
+                    self.parse_semicolon().await?;
+                    break;
+                }
+                Token::EOF => {
+                    self.parse_eof().await?;
+                    break;
+                }
+                _ => {
+                    self.take_token().await?;
+                }
+            }
+        }
         Ok(())
     }
 
