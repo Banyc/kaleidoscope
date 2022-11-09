@@ -28,6 +28,12 @@
   - only datatype: double
   - no type declarations
 
+## Dev environment
+
+- llvm@14
+- Set environment variable `LLVM_SYS_140_PREFIX` to the path of llvm@14
+  - Also set it at `rust-analyzer.server.extraEnv` and `rust-analyzer.runnableEnv` in `settings.json` if you use vscode
+
 ## References
 
 - <https://llvm.org/docs/tutorial/MyFirstLanguageFrontend/index.html>
