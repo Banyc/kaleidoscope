@@ -38,8 +38,11 @@ impl<'stream> Parser<'stream> {
 
     /// - `numberexpr ::= number`
     async fn parse_number_expr(&mut self) -> Result<ExprAst, ParserError> {
-        let Token::Number(n) = self.take_token().await? else {
+        let Token::Number(_) = self.peek_token().await? else {
             return Err(ParserError::ParserError("Expected number.".to_string()));
+        };
+        let Token::Number(n) = self.take_token().await? else {
+            unreachable!();
         };
 
         Ok(ExprAst::Number(n))
@@ -48,16 +51,18 @@ impl<'stream> Parser<'stream> {
     /// - `parenexpr ::= '(' expression ')'
     async fn parse_paren_expr(&mut self) -> Result<ExprAst, ParserError> {
         // eat '('
-        let Token::Unknown('(') = self.take_token().await? else {
+        let Token::Unknown('(') = self.peek_token().await? else {
             return Err(ParserError::ParserError("Expected '('.".to_string()));
         };
+        self.take_token().await?;
 
         let expr = self.parse_expression().await?;
 
         // eat ')'
-        let Token::Unknown(')') = self.take_token().await? else {
+        let Token::Unknown(')') = self.peek_token().await? else {
             return Err(ParserError::ParserError("Expected ')'.".to_string()));
         };
+        self.take_token().await?;
 
         Ok(expr)
     }
@@ -68,8 +73,11 @@ impl<'stream> Parser<'stream> {
     ///     ::= identifier '(' (expression (',' expression)*)? ')'
     ///   ```
     async fn parse_identifier_expr(&mut self) -> Result<ExprAst, ParserError> {
-        let Token::Identifier(id_name) = self.take_token().await? else {
+        let Token::Identifier(_) = self.peek_token().await? else {
             return Err(ParserError::ParserError("Expected identifier.".to_string()));
+        };
+        let Token::Identifier(id_name) = self.take_token().await? else {
+            unreachable!();
         };
 
         match self.peek_token().await? {
@@ -95,11 +103,12 @@ impl<'stream> Parser<'stream> {
                         }
 
                         // eat ','
-                        let Token::Unknown(',') = self.take_token().await? else {
+                        let Token::Unknown(',') = self.peek_token().await? else {
                             return Err(ParserError::ParserError(
                                 "Expected ')' or ',' in argument list.".to_string(),
                             ));
                         };
+                        self.take_token().await?;
                     },
                 };
 
@@ -267,18 +276,22 @@ impl<'stream> Parser<'stream> {
     ///     ::= id '(' id* ')'
     ///   ```
     async fn parse_prototype(&mut self) -> Result<PrototypeAst, ParserError> {
-        let Token::Identifier(name) = self.take_token().await? else {
+        let Token::Identifier(_) = self.peek_token().await? else {
             return Err(ParserError::ParserError(
                 "Expected function name in prototype.".to_string(),
             ));
         };
+        let Token::Identifier(name) = self.take_token().await? else {
+            unreachable!();
+        };
 
         // Eat '('.
-        let Token::Unknown('(') = self.take_token().await? else {
+        let Token::Unknown('(') = self.peek_token().await? else {
             return Err(ParserError::ParserError(
                 "Expected '(' in prototype.".to_string(),
             ));
         };
+        self.take_token().await?;
 
         let mut args = Vec::new();
 
@@ -311,11 +324,12 @@ impl<'stream> Parser<'stream> {
     ///   ```
     pub async fn parse_definition(&mut self) -> Result<FunctionAst, ParserError> {
         // Eat 'def'.
-        let Token::Def = self.take_token().await? else {
+        let Token::Def = self.peek_token().await? else {
             return Err(ParserError::ParserError(
                 "Expected 'def' keyword.".to_string(),
             ));
         };
+        self.take_token().await?;
 
         let prototype = self.parse_prototype().await?;
         let body = self.parse_expression().await?;
@@ -328,11 +342,12 @@ impl<'stream> Parser<'stream> {
     ///   ```
     pub async fn parse_extern(&mut self) -> Result<PrototypeAst, ParserError> {
         // Eat 'extern'.
-        let Token::Extern = self.take_token().await? else {
+        let Token::Extern = self.peek_token().await? else {
             return Err(ParserError::ParserError(
                 "Expected 'extern' keyword.".to_string(),
             ));
         };
+        self.take_token().await?;
 
         self.parse_prototype().await
     }
@@ -351,20 +366,22 @@ impl<'stream> Parser<'stream> {
     }
 
     pub async fn parse_semicolon(&mut self) -> Result<(), ParserError> {
-        let Token::Unknown(';') = self.take_token().await? else {
+        let Token::Unknown(';') = self.peek_token().await? else {
             return Err(ParserError::ParserError(
                 "Expected ';'.".to_string(),
             ));
         };
+        self.take_token().await?;
         Ok(())
     }
 
     pub async fn parse_eof(&mut self) -> Result<(), ParserError> {
-        let Token::EOF = self.take_token().await? else {
+        let Token::EOF = self.peek_token().await? else {
             return Err(ParserError::ParserError(
                 "Expected EOF.".to_string(),
             ));
         };
+        self.take_token().await?;
         Ok(())
     }
 
