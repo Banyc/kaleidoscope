@@ -119,7 +119,17 @@ impl CodeGenVisitor for FunctionAst {
     fn code_gen<'ctx>(&self, ctx: &mut CodeGenCtx<'ctx>) -> Result<AnyValueEnum<'ctx>, String> {
         // First, check for an existing function from a previous 'extern' declaration.
         let function = match ctx.module().get_function(self.prototype.name.as_str()) {
-            Some(function) => function,
+            Some(function) => {
+                // Validate function signature arg count
+                if function.count_params() as usize != self.prototype.args.len() {
+                    return Err(format!(
+                        "redefinition of function with different # of args: {}",
+                        self.prototype.name
+                    ));
+                }
+
+                function
+            }
             None => {
                 let prototype = self.prototype.code_gen(ctx)?;
                 prototype.into_function_value()
@@ -138,11 +148,15 @@ impl CodeGenVisitor for FunctionAst {
         let basic_block = ctx.context().append_basic_block(function, "entry");
         ctx.builder().position_at_end(basic_block);
 
-        // Record the function arguments in the NamedValues map.
+        // Record the function parameters in the NamedValues map.
         ctx.named_values_mut().clear();
-        for arg in function.get_param_iter() {
+        for (i, arg) in function.get_param_iter().enumerate() {
             let arg = arg.into_float_value();
-            let name = arg.get_name().to_str().unwrap();
+
+            // Create aliases for arguments.
+            // let name = arg.get_name().to_str().unwrap();
+            let name = self.prototype.args[i].as_str();
+
             ctx.named_values_mut()
                 .insert(name.to_string(), arg.as_any_value_enum());
         }
@@ -161,6 +175,7 @@ impl CodeGenVisitor for FunctionAst {
             }
             Err(e) => {
                 // Error reading body, remove function.
+                // If we didn’t delete it, it would live in the symbol table, with a body, preventing future redefinition.
                 // SAFETY: LLVM function is not used after this point.
                 unsafe { function.delete() };
 
@@ -291,6 +306,31 @@ mod tests {
         assert_eq!(
             value.into_float_value().print_to_string().to_string(),
             "  %calltmp = call double @foo(double 1.000000e+00, double 2.000000e+00)"
+        );
+    }
+
+    #[test]
+    fn test_function_with_different_arg_name() {
+        let extern_ast = PrototypeAst {
+            name: "foo".to_string(),
+            args: vec!["a".to_string()],
+        };
+        let function_ast = FunctionAst {
+            prototype: PrototypeAst {
+                name: "foo".to_string(),
+                args: vec!["b".to_string()],
+            },
+            body: ExprAst::Variable("b".to_string()),
+        };
+
+        let context = inkwell::context::Context::create();
+        let mut ctx = CodeGenCtx::new("test", &context);
+
+        extern_ast.code_gen(&mut ctx).unwrap();
+        let value = function_ast.code_gen(&mut ctx).unwrap();
+        assert_eq!(
+            value.into_function_value().print_to_string().to_string(),
+            "define double @foo(double %0) {\nentry:\n  ret double %0\n}\n"
         );
     }
 }
