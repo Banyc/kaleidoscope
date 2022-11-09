@@ -93,6 +93,10 @@ impl CodeGenVisitor for ExprAst {
 
 impl CodeGenVisitor for PrototypeAst {
     fn code_gen<'ctx>(&self, ctx: &mut CodeGenCtx<'ctx>) -> Result<AnyValueEnum<'ctx>, String> {
+        if ctx.module().get_function(self.name.as_str()).is_some() {
+            return Err(format!("Function {} already exists", self.name));
+        }
+
         // Make the function type: double(double, double) etc.
 
         // (double, double)
