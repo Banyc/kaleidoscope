@@ -6,7 +6,6 @@ use std::thread;
 use futures::channel::mpsc::channel;
 use futures::{SinkExt, Stream};
 use inkwell::values::AnyValue;
-use kaleidoscope::ast::AnyAst;
 use kaleidoscope::code_gen_ctx::CodeGenCtx;
 use kaleidoscope::code_gen_visitor::CodeGenVisitor;
 use kaleidoscope::parser::Parser;
@@ -38,14 +37,7 @@ fn main() {
             };
 
             // Code generation.
-            let res = match any_ast {
-                AnyAst::Expr(expr) => expr.code_gen(&mut ctx),
-                AnyAst::Prototype(prototype) => prototype.code_gen(&mut ctx),
-                AnyAst::Function(function) => function.code_gen(&mut ctx),
-                AnyAst::Empty => continue,
-            };
-
-            let value = match res {
+            let value = match any_ast.code_gen(&mut ctx) {
                 Ok(value) => value,
                 Err(e) => {
                     eprintln!("Error(codegen): {:?}", e);

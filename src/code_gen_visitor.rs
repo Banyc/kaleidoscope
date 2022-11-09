@@ -5,12 +5,22 @@ use inkwell::{
 };
 
 use crate::{
-    ast::{ExprAst, FunctionAst, PrototypeAst},
+    ast::{AnyAst, ExprAst, FunctionAst, PrototypeAst},
     code_gen_ctx::CodeGenCtx,
 };
 
 pub trait CodeGenVisitor {
     fn code_gen<'ctx>(&self, ctx: &mut CodeGenCtx<'ctx>) -> Result<AnyValueEnum<'ctx>, String>;
+}
+
+impl CodeGenVisitor for AnyAst {
+    fn code_gen<'ctx>(&self, ctx: &mut CodeGenCtx<'ctx>) -> Result<AnyValueEnum<'ctx>, String> {
+        match self {
+            AnyAst::Expr(expr) => expr.code_gen(ctx),
+            AnyAst::Prototype(prototype) => prototype.code_gen(ctx),
+            AnyAst::Function(function) => function.code_gen(ctx),
+        }
+    }
 }
 
 impl CodeGenVisitor for ExprAst {

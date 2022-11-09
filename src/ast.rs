@@ -33,5 +33,4 @@ pub enum AnyAst {
     Expr(ExprAst),
     Prototype(PrototypeAst),
     Function(FunctionAst),
-    Empty,
 }

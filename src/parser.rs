@@ -389,20 +389,20 @@ impl<'stream> Parser<'stream> {
     ///   any ::= definition | external | toplevelexpr | ';'
     ///   ```
     pub async fn parse_any(&mut self) -> Result<AnyAst, ParserError> {
-        match self.peek_token().await? {
-            Token::Def => Ok(AnyAst::Function(self.parse_definition().await?)),
-            Token::Extern => Ok(AnyAst::Prototype(self.parse_extern().await?)),
-            Token::Unknown(';') => {
-                self.parse_semicolon().await?;
-                Ok(AnyAst::Empty)
-            }
-            Token::EOF => {
-                self.parse_eof().await?;
-                Ok(AnyAst::Empty)
-            }
-            _ => {
-                // Assume top-level expression.
-                Ok(AnyAst::Function(self.parse_top_level_expr().await?))
+        loop {
+            match self.peek_token().await? {
+                Token::Def => return Ok(AnyAst::Function(self.parse_definition().await?)),
+                Token::Extern => return Ok(AnyAst::Prototype(self.parse_extern().await?)),
+                Token::Unknown(';') => {
+                    self.parse_semicolon().await?;
+                }
+                Token::EOF => {
+                    self.parse_eof().await?;
+                }
+                _ => {
+                    // Assume top-level expression.
+                    return Ok(AnyAst::Function(self.parse_top_level_expr().await?));
+                }
             }
         }
     }
