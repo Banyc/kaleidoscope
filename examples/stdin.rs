@@ -22,7 +22,10 @@ fn main() {
         loop {
             // Parse an AST from the input stream.
             let any_ast = match parser.parse_any().await {
-                Ok(any_ast) => any_ast,
+                Ok(any_ast) => match any_ast {
+                    Some(any_ast) => any_ast,
+                    None => break, // EOF
+                },
                 Err(e) => {
                     eprintln!("Error(parser): {:?}", e);
                     match parser.skip_until_semicolon().await {
