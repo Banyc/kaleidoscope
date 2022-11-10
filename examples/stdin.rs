@@ -18,7 +18,7 @@ fn main() {
     let mut parser = Parser::from_char_stream(&mut stdin);
 
     let context = inkwell::context::Context::create();
-    let mut ctx = code_gen::Ctx::new("test", &context);
+    let mut ctx = code_gen::ModuleCtx::new("test", &context);
 
     let task = async {
         loop {

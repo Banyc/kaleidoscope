@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use inkwell::{builder::Builder, context::Context, module::Module, values::AnyValueEnum};
 
-pub struct Ctx<'ctx> {
+pub struct ModuleCtx<'ctx> {
     context: &'ctx Context,
     module: Module<'ctx>,
     builder: Builder<'ctx>,
@@ -10,12 +10,12 @@ pub struct Ctx<'ctx> {
     named_values: HashMap<String, AnyValueEnum<'ctx>>,
 }
 
-impl<'ctx> Ctx<'ctx> {
+impl<'ctx> ModuleCtx<'ctx> {
     pub fn new(module_name: &str, context: &'ctx Context) -> Self {
         let module = context.create_module(module_name);
         let builder = context.create_builder();
 
-        Ctx {
+        ModuleCtx {
             context,
             module,
             builder,

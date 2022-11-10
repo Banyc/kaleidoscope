@@ -6,14 +6,14 @@ use inkwell::{
 
 use crate::ast::{AnyAst, ExprAst, FunctionAst, PrototypeAst};
 
-use super::ctx::Ctx;
+use super::module_ctx::ModuleCtx;
 
 pub trait Visitor {
-    fn code_gen<'ctx>(&self, ctx: &mut Ctx<'ctx>) -> Result<AnyValueEnum<'ctx>, String>;
+    fn code_gen<'ctx>(&self, ctx: &mut ModuleCtx<'ctx>) -> Result<AnyValueEnum<'ctx>, String>;
 }
 
 impl Visitor for AnyAst {
-    fn code_gen<'ctx>(&self, ctx: &mut Ctx<'ctx>) -> Result<AnyValueEnum<'ctx>, String> {
+    fn code_gen<'ctx>(&self, ctx: &mut ModuleCtx<'ctx>) -> Result<AnyValueEnum<'ctx>, String> {
         match self {
             AnyAst::Expr(expr) => expr.code_gen(ctx),
             AnyAst::Prototype(prototype) => prototype.code_gen(ctx),
@@ -23,7 +23,7 @@ impl Visitor for AnyAst {
 }
 
 impl Visitor for ExprAst {
-    fn code_gen<'ctx>(&self, ctx: &mut Ctx<'ctx>) -> Result<AnyValueEnum<'ctx>, String> {
+    fn code_gen<'ctx>(&self, ctx: &mut ModuleCtx<'ctx>) -> Result<AnyValueEnum<'ctx>, String> {
         match self {
             ExprAst::Number(n) => {
                 // float point
@@ -101,7 +101,7 @@ impl Visitor for ExprAst {
 }
 
 impl Visitor for PrototypeAst {
-    fn code_gen<'ctx>(&self, ctx: &mut Ctx<'ctx>) -> Result<AnyValueEnum<'ctx>, String> {
+    fn code_gen<'ctx>(&self, ctx: &mut ModuleCtx<'ctx>) -> Result<AnyValueEnum<'ctx>, String> {
         if ctx.module().get_function(self.name.as_str()).is_some() {
             return Err(format!("Function {} already exists", self.name));
         }
@@ -129,7 +129,7 @@ impl Visitor for PrototypeAst {
 }
 
 impl Visitor for FunctionAst {
-    fn code_gen<'ctx>(&self, ctx: &mut Ctx<'ctx>) -> Result<AnyValueEnum<'ctx>, String> {
+    fn code_gen<'ctx>(&self, ctx: &mut ModuleCtx<'ctx>) -> Result<AnyValueEnum<'ctx>, String> {
         // First, check for an existing function from a previous 'extern' declaration.
         let function = match ctx.module().get_function(self.prototype.name.as_str()) {
             Some(function) => {
@@ -206,7 +206,7 @@ mod tests {
     fn test_number() {
         let ast = ExprAst::Number(1.0);
         let context = inkwell::context::Context::create();
-        let mut ctx = Ctx::new("test", &context);
+        let mut ctx = ModuleCtx::new("test", &context);
         let value = ast.code_gen(&mut ctx).unwrap();
         assert_eq!(
             value.into_float_value().print_to_string().to_string(),
@@ -218,7 +218,7 @@ mod tests {
     fn test_variable() {
         let ast = ExprAst::Variable("x".to_string());
         let context = inkwell::context::Context::create();
-        let mut ctx = Ctx::new("test", &context);
+        let mut ctx = ModuleCtx::new("test", &context);
         ctx.named_values_mut().insert(
             "x".to_string(),
             AnyValueEnum::FloatValue(context.f64_type().const_float(1.0)),
@@ -238,7 +238,7 @@ mod tests {
             rhs: Box::new(ExprAst::Number(2.0)),
         };
         let context = inkwell::context::Context::create();
-        let mut ctx = Ctx::new("test", &context);
+        let mut ctx = ModuleCtx::new("test", &context);
         let value = ast.code_gen(&mut ctx).unwrap();
         assert_eq!(
             value.into_float_value().print_to_string().to_string(),
@@ -254,7 +254,7 @@ mod tests {
             rhs: Box::new(ExprAst::Number(2.0)),
         };
         let context = inkwell::context::Context::create();
-        let mut ctx = Ctx::new("test", &context);
+        let mut ctx = ModuleCtx::new("test", &context);
         let value = ast.code_gen(&mut ctx).unwrap();
         assert_eq!(
             value.into_float_value().print_to_string().to_string(),
@@ -269,7 +269,7 @@ mod tests {
             args: vec!["x".to_string(), "y".to_string()],
         };
         let context = inkwell::context::Context::create();
-        let mut ctx = Ctx::new("test", &context);
+        let mut ctx = ModuleCtx::new("test", &context);
         let value = ast.code_gen(&mut ctx).unwrap();
         assert_eq!(
             value.into_function_value().print_to_string().to_string(),
@@ -287,7 +287,7 @@ mod tests {
             body: ExprAst::Number(1.0),
         };
         let context = inkwell::context::Context::create();
-        let mut ctx = Ctx::new("test", &context);
+        let mut ctx = ModuleCtx::new("test", &context);
         let value = ast.code_gen(&mut ctx).unwrap();
         assert_eq!(
             value.into_function_value().print_to_string().to_string(),
@@ -311,7 +311,7 @@ mod tests {
         };
 
         let context = inkwell::context::Context::create();
-        let mut ctx = Ctx::new("test", &context);
+        let mut ctx = ModuleCtx::new("test", &context);
 
         function.code_gen(&mut ctx).unwrap();
 
@@ -337,7 +337,7 @@ mod tests {
         };
 
         let context = inkwell::context::Context::create();
-        let mut ctx = Ctx::new("test", &context);
+        let mut ctx = ModuleCtx::new("test", &context);
 
         extern_ast.code_gen(&mut ctx).unwrap();
         let value = function_ast.code_gen(&mut ctx).unwrap();
