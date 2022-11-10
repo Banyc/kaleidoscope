@@ -6,6 +6,7 @@ use std::thread;
 use futures::channel::mpsc::channel;
 use futures::{SinkExt, Stream};
 use inkwell::values::AnyValue;
+use kaleidoscope::ast::AnyAst;
 use kaleidoscope::code_gen_ctx::CodeGenCtx;
 use kaleidoscope::code_gen_visitor::CodeGenVisitor;
 use kaleidoscope::parser::Parser;
@@ -21,9 +22,15 @@ fn main() {
     let task = async {
         loop {
             // Parse an AST from the input stream.
-            let any_ast = match parser.parse_any().await {
+            let (any_ast, is_top_level) = match parser.parse_any().await {
                 Ok(any_ast) => match any_ast {
-                    Some(any_ast) => any_ast,
+                    Some(any_ast) => {
+                        let is_top_level = match &any_ast {
+                            AnyAst::Function(function) => function.prototype.name == "",
+                            _ => false,
+                        };
+                        (any_ast, is_top_level)
+                    }
                     None => break, // EOF
                 },
                 Err(e) => {
@@ -50,6 +57,45 @@ fn main() {
 
             // Print the generated code.
             println!("; {}", value.print_to_string().to_string());
+
+            // Run the generated code.
+            // JIT
+            if is_top_level {
+                let top_level_func = value.into_function_value();
+
+                // SAFETY: The execution engine takes ownership of the module.
+                let execution_engine = match ctx.module().create_execution_engine() {
+                    Ok(execution_engine) => execution_engine,
+                    Err(e) => {
+                        eprintln!("Error(execution_engine): {:?}", e);
+                        continue;
+                    }
+                };
+
+                // SAFETY: The generated code cannot mess with the heap memory yet.
+                let value = unsafe { execution_engine.run_function(top_level_func, &[]) };
+
+                // Print the result.
+                println!(
+                    "; Evaluated to {}",
+                    value.as_float(&ctx.context().f64_type()).to_string()
+                );
+
+                // Clear the top-level function.
+                // SAFETY: The function is not used anymore.
+                unsafe { top_level_func.delete() };
+
+                // Clear the execution engine.
+                // SAFETY: The execution engine release the module.
+                let res = execution_engine.remove_module(ctx.module());
+                match res {
+                    Ok(_) => (),
+                    Err(e) => {
+                        eprintln!("Error(execution_engine, fatal): {:?}", e);
+                        break;
+                    }
+                };
+            }
         }
     };
 
