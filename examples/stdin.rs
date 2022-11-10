@@ -77,6 +77,10 @@ fn main() {
                             eprintln!("Error(jit, fatal): {:?}", e);
                             break;
                         }
+                        jit::Error::UndefFunctionsError(undef_functions) => {
+                            eprintln!("Error(jit): Undefined functions: {:?}", undef_functions);
+                            continue;
+                        }
                     },
                 };
 
