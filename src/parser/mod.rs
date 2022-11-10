@@ -7,8 +7,11 @@ use crate::{
     ast::{AnyAst, ExprAst, FunctionAst, PrototypeAst},
     lexer::{CharStream, Lexer, LexerError},
     token::Token,
-    token_src::TokenSource,
 };
+
+use self::token_src::TokenSource;
+
+mod token_src;
 
 lazy_static! {
     /// - 1 is lowest precedence
