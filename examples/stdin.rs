@@ -9,6 +9,7 @@ use inkwell::values::AnyValue;
 use kaleidoscope::ast::AnyAst;
 use kaleidoscope::code_gen_ctx::CodeGenCtx;
 use kaleidoscope::code_gen_visitor::CodeGenVisitor;
+use kaleidoscope::jit;
 use kaleidoscope::parser::Parser;
 
 fn main() {
@@ -63,38 +64,27 @@ fn main() {
             if is_top_level {
                 let top_level_func = value.into_function_value();
 
-                // SAFETY: The execution engine takes ownership of the module.
-                let execution_engine = match ctx.module().create_execution_engine() {
-                    Ok(execution_engine) => execution_engine,
-                    Err(e) => {
-                        eprintln!("Error(execution_engine): {:?}", e);
-                        continue;
-                    }
-                };
-
                 // SAFETY: The generated code cannot mess with the heap memory yet.
-                let value = unsafe { execution_engine.run_function(top_level_func, &[]) };
+                let res = unsafe { jit::run_and_drop_func(&ctx.module(), top_level_func, &[]) };
+                let value = match res {
+                    Ok(value) => value,
+                    Err(e) => match e {
+                        jit::Error::CreateExecutionEngineError(e) => {
+                            eprintln!("Error(jit): {:?}", e);
+                            continue;
+                        }
+                        jit::Error::ReleaseModuleError(e) => {
+                            eprintln!("Error(jit, fatal): {:?}", e);
+                            break;
+                        }
+                    },
+                };
 
                 // Print the result.
                 println!(
                     "; Evaluated to {}",
                     value.as_float(&ctx.context().f64_type()).to_string()
                 );
-
-                // Clear the top-level function.
-                // SAFETY: The function is not used anymore.
-                unsafe { top_level_func.delete() };
-
-                // Clear the execution engine.
-                // SAFETY: The execution engine release the module.
-                let res = execution_engine.remove_module(ctx.module());
-                match res {
-                    Ok(_) => (),
-                    Err(e) => {
-                        eprintln!("Error(execution_engine, fatal): {:?}", e);
-                        break;
-                    }
-                };
             }
         }
     };
