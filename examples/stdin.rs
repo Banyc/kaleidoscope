@@ -7,8 +7,8 @@ use futures::channel::mpsc::channel;
 use futures::{SinkExt, Stream};
 use inkwell::values::AnyValue;
 use kaleidoscope::ast::AnyAst;
-use kaleidoscope::code_gen_ctx::CodeGenCtx;
-use kaleidoscope::code_gen_visitor::CodeGenVisitor;
+use kaleidoscope::code_gen;
+use kaleidoscope::code_gen::Visitor;
 use kaleidoscope::jit;
 use kaleidoscope::parser::Parser;
 
@@ -18,7 +18,7 @@ fn main() {
     let mut parser = Parser::from_char_stream(&mut stdin);
 
     let context = inkwell::context::Context::create();
-    let mut ctx = CodeGenCtx::new("test", &context);
+    let mut ctx = code_gen::Ctx::new("test", &context);
 
     let task = async {
         loop {
