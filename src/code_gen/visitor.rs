@@ -81,6 +81,14 @@ impl Visitor for ExprAst {
                     return Err(format!("Unknown function referenced: {}", callee));
                 };
 
+                // Check the number of arguments.
+                if callee.count_params() as usize != args.len() {
+                    return Err(format!(
+                        "Incorrect number of arguments passed: {}",
+                        args.len()
+                    ));
+                }
+
                 let args: Result<Vec<_>, _> = args
                     .iter()
                     .map(|arg| {
