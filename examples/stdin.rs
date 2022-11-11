@@ -39,8 +39,7 @@ fn main() {
                     match parser.skip_until_semicolon().await {
                         Ok(_) => (),
                         Err(e) => {
-                            eprintln!("Error(parser, fatal): {:?}", e);
-                            break;
+                            eprintln!("Error(parser, recovery): {:?}", e);
                         }
                     };
                     continue;
