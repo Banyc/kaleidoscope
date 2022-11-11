@@ -104,6 +104,81 @@ impl Visitor for ExprAst {
                 let value = ctx.builder().build_call(callee, &args, "calltmp");
                 Ok(value.as_any_value_enum())
             }
+            ExprAst::If { cond, then, else_ } => {
+                let cond = cond.code_gen(ctx)?;
+                let cond = cond.into_float_value();
+
+                // Convert condition to a bool by comparing non-equal to 0.0.
+                let cond = ctx.builder().build_float_compare(
+                    inkwell::FloatPredicate::ONE,
+                    cond,
+                    ctx.context().f64_type().const_float(0.0),
+                    "ifcond",
+                );
+
+                let first_block = match ctx.builder().get_insert_block() {
+                    Some(v) => v,
+                    None => {
+                        return Err("If statement must be in a block".to_string());
+                    }
+                };
+
+                let function = first_block.get_parent().unwrap();
+
+                // Append labels to the function.
+                let then_block = ctx.context().append_basic_block(function, "then"); // "then": label name
+                let else_block = ctx.context().append_basic_block(function, "else");
+                let merge_block = ctx.context().append_basic_block(function, "ifcont");
+
+                // Append the conditional branch to the `first_block` block.
+                // `then_block` and `else_block` are for generating the branch label names.
+                ctx.builder()
+                    .build_conditional_branch(cond, then_block, else_block);
+
+                // Construct the `then_block` labeled "then".
+                let then = {
+                    // Move position pointer to the end of the `then_block` block so that the following code insertion will be inserted into the `then_block` block.
+                    ctx.builder().position_at_end(then_block);
+
+                    // Append the `then` expression to the `then_block` block.
+                    let then = then.code_gen(ctx)?;
+
+                    // Append a jump to the `merge_block` block.
+                    ctx.builder().build_unconditional_branch(merge_block);
+
+                    then.into_float_value()
+                };
+
+                // Construct the `else_block` labeled "else".
+                let else_ = {
+                    // Move position pointer to the end of the `else_block` block so that the following code insertion will be inserted into the `else_block` block.
+                    ctx.builder().position_at_end(else_block);
+
+                    // Append the `else_` expression to the `else_block` block.
+                    let else_ = else_.code_gen(ctx)?;
+
+                    // Append a jump to the `merge_block` block.
+                    ctx.builder().build_unconditional_branch(merge_block);
+
+                    else_.into_float_value()
+                };
+
+                // Construct the `merge_block` labeled "ifcont".
+                {
+                    // Move position pointer to the end of the `merge_block` block so that the following code insertion will be inserted into the `merge_block` block.
+                    ctx.builder().position_at_end(merge_block);
+
+                    // Append the PHI node to the `merge_block` block.
+                    let phi = ctx.builder().build_phi(ctx.context().f64_type(), "iftmp");
+
+                    // Add the incoming values to the PHI node by appending them to the `merge_block` block.
+                    phi.add_incoming(&[(&then, then_block), (&else_, else_block)]);
+
+                    Ok(AnyValueEnum::FloatValue(
+                        phi.as_basic_value().into_float_value(),
+                    ))
+                }
+            }
         }
     }
 }
@@ -267,6 +342,147 @@ mod tests {
         assert_eq!(
             value.into_float_value().print_to_string().to_string(),
             "double 1.000000e+00"
+        );
+    }
+
+    #[test]
+    fn test_if_true() {
+        // function
+        let function = FunctionAst {
+            prototype: PrototypeAst {
+                name: "foo".to_string(),
+                args: vec![],
+            },
+            body: ExprAst::If {
+                cond: Box::new(ExprAst::Number(0.2)),
+                then: Box::new(ExprAst::Number(2.0)),
+                else_: Box::new(ExprAst::Number(3.0)),
+            },
+        };
+
+        let context = inkwell::context::Context::create();
+        let mut ctx = ModuleCtx::new("test", &context);
+        let value = function.code_gen(&mut ctx).unwrap();
+
+        let expected = "define double @foo() {
+entry:
+  br i1 true, label %then, label %else
+
+then:                                             ; preds = %entry
+  br label %ifcont
+
+else:                                             ; preds = %entry
+  br label %ifcont
+
+ifcont:                                           ; preds = %else, %then
+  %iftmp = phi double [ 2.000000e+00, %then ], [ 3.000000e+00, %else ]
+  ret double %iftmp
+}
+";
+
+        assert_eq!(
+            value.into_function_value().print_to_string().to_string(),
+            expected
+        );
+    }
+
+    #[test]
+    fn test_if_false() {
+        // function
+        let function = FunctionAst {
+            prototype: PrototypeAst {
+                name: "foo".to_string(),
+                args: vec![],
+            },
+            body: ExprAst::If {
+                cond: Box::new(ExprAst::Number(0.0)),
+                then: Box::new(ExprAst::Number(2.0)),
+                else_: Box::new(ExprAst::Number(3.0)),
+            },
+        };
+
+        let context = inkwell::context::Context::create();
+        let mut ctx = ModuleCtx::new("test", &context);
+        let value = function.code_gen(&mut ctx).unwrap();
+
+        let expected = "define double @foo() {
+entry:
+  br i1 false, label %then, label %else
+
+then:                                             ; preds = %entry
+  br label %ifcont
+
+else:                                             ; preds = %entry
+  br label %ifcont
+
+ifcont:                                           ; preds = %else, %then
+  %iftmp = phi double [ 2.000000e+00, %then ], [ 3.000000e+00, %else ]
+  ret double %iftmp
+}
+";
+
+        assert_eq!(
+            value.into_function_value().print_to_string().to_string(),
+            expected
+        );
+    }
+
+    #[test]
+    fn test_if_something_in_blocks() {
+        let foo = PrototypeAst {
+            name: "foo".to_string(),
+            args: vec![],
+        };
+        let bar = PrototypeAst {
+            name: "bar".to_string(),
+            args: vec![],
+        };
+
+        let baz = FunctionAst {
+            prototype: PrototypeAst {
+                name: "baz".to_string(),
+                args: vec!["x".to_string()],
+            },
+            body: ExprAst::If {
+                cond: Box::new(ExprAst::Variable("x".to_string())),
+                then: Box::new(ExprAst::Call {
+                    callee: "foo".to_string(),
+                    args: vec![],
+                }),
+                else_: Box::new(ExprAst::Call {
+                    callee: "bar".to_string(),
+                    args: vec![],
+                }),
+            },
+        };
+
+        let context = inkwell::context::Context::create();
+        let mut ctx = ModuleCtx::new("test", &context);
+
+        foo.code_gen(&mut ctx).unwrap();
+        bar.code_gen(&mut ctx).unwrap();
+        let value = baz.code_gen(&mut ctx).unwrap();
+
+        assert_eq!(
+            value.into_function_value().print_to_string().to_string(),
+            "define double @baz(double %0) {
+entry:
+  %ifcond = fcmp one double %0, 0.000000e+00
+  br i1 %ifcond, label %then, label %else
+
+then:                                             ; preds = %entry
+  %calltmp = call double @foo()
+  br label %ifcont
+
+else:                                             ; preds = %entry
+  %calltmp1 = call double @bar()
+  br label %ifcont
+
+ifcont:                                           ; preds = %else, %then
+  %iftmp = phi double [ %calltmp, %then ], [ %calltmp1, %else ]
+  ret double %iftmp
+}
+",
         );
     }
 

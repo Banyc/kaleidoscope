@@ -11,5 +11,10 @@ pub enum Token {
     Identifier(String),
     Number(f64),
 
+    // control
+    If,
+    Then,
+    Else,
+
     Unknown(char),
 }

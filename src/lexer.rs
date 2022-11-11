@@ -42,6 +42,9 @@ impl<'stream> Lexer<'stream> {
             return Ok(match identifier.as_str() {
                 "def" => Token::Def,
                 "extern" => Token::Extern,
+                "if" => Token::If,
+                "then" => Token::Then,
+                "else" => Token::Else,
                 _ => Token::Identifier(identifier),
             });
         }

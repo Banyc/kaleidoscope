@@ -126,10 +126,55 @@ impl<'stream> Parser<'stream> {
     }
 
     /// - ```text
+    ///   ifexpr ::= 'if' expression 'then' expression 'else' expression
+    ///   ```
+    async fn parse_if_expr(&mut self) -> Result<ExprAst, ParserError> {
+        let Token::If = self.peek_token().await? else {
+            return Err(ParserError::ParserError(
+                "Expected `if` keyword.".to_string(),
+            ));
+        };
+        // Eat `if`.
+        self.take_token().await?;
+
+        // Parse condition.
+        let cond = self.parse_expression().await?;
+
+        let Token::Then = self.peek_token().await? else {
+            return Err(ParserError::ParserError(
+                "Expected `then` keyword.".to_string(),
+            ));
+        };
+        // Eat `then`.
+        self.take_token().await?;
+
+        // Parse then branch.
+        let then = self.parse_expression().await?;
+
+        let Token::Else = self.peek_token().await? else {
+            return Err(ParserError::ParserError(
+                "Expected `else` keyword.".to_string(),
+            ));
+        };
+        // Eat `else`.
+        self.take_token().await?;
+
+        // Parse else branch.
+        let else_ = self.parse_expression().await?;
+
+        Ok(ExprAst::If {
+            cond: Box::new(cond),
+            then: Box::new(then),
+            else_: Box::new(else_),
+        })
+    }
+
+    /// - ```text
     ///   primary
     ///     ::= identifierexpr
     ///     ::= numberexpr
     ///     ::= parenexpr
+    ///     ::= ifexpr
     ///   ```
     #[async_recursion]
     async fn parse_primary(&mut self) -> Result<ExprAst, ParserError> {
@@ -137,6 +182,7 @@ impl<'stream> Parser<'stream> {
             Token::Unknown('(') => self.parse_paren_expr().await,
             Token::Identifier(_) => self.parse_identifier_expr().await,
             Token::Number(_) => self.parse_number_expr().await,
+            Token::If => self.parse_if_expr().await,
             _ => Err(ParserError::ParserError(
                 "Unknown token when expecting an expression.".to_string(),
             )),
@@ -531,6 +577,27 @@ mod tests {
                 ExprAst::Call {
                     callee: "foo".to_string(),
                     args: vec![ExprAst::Number(1.2), ExprAst::Variable("x".to_string())],
+                }
+            );
+            parser.parse_eof().await.unwrap();
+        };
+
+        executor::block_on(task);
+    }
+
+    #[test]
+    fn test_parse_if_expr() {
+        let mut char_stream = stream::iter("if 1.2 then 3.4 else 5.6".chars());
+        let mut parser = Parser::from_char_stream(&mut char_stream);
+
+        let task = async {
+            let expr = parser.parse_if_expr().await.unwrap();
+            assert_eq!(
+                expr,
+                ExprAst::If {
+                    cond: Box::new(ExprAst::Number(1.2)),
+                    then: Box::new(ExprAst::Number(3.4)),
+                    else_: Box::new(ExprAst::Number(5.6)),
                 }
             );
             parser.parse_eof().await.unwrap();

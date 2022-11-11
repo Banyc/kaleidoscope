@@ -12,6 +12,11 @@ pub enum ExprAst {
         callee: String,
         args: Vec<ExprAst>,
     },
+    If {
+        cond: Box<ExprAst>,
+        then: Box<ExprAst>,
+        else_: Box<ExprAst>,
+    },
 }
 
 /// - Learn more: <https://llvm.org/docs/tutorial/MyFirstLanguageFrontend/LangImpl02.html#the-abstract-syntax-tree-ast>
