@@ -11,6 +11,20 @@ pub unsafe fn run_and_drop_func<'ctx>(
     function: FunctionValue<'ctx>,
     args: &[&GenericValue<'ctx>],
 ) -> Result<GenericValue<'ctx>, Error> {
+    let res = run_func(module, function, args);
+
+    // Clear the function.
+    // SAFETY: The function is not used anymore.
+    unsafe { function.delete() };
+
+    res
+}
+
+unsafe fn run_func<'ctx>(
+    module: &Module<'ctx>,
+    function: FunctionValue<'ctx>,
+    args: &[&GenericValue<'ctx>],
+) -> Result<GenericValue<'ctx>, Error> {
     let undef_functions = undef_functions(module);
 
     if undef_functions.len() > 0 {
@@ -25,10 +39,6 @@ pub unsafe fn run_and_drop_func<'ctx>(
 
     // SAFETY: Undefined functions are checked above.
     let value = execution_engine.run_function(function, args);
-
-    // Clear the top-level function.
-    // SAFETY: The function is not used anymore.
-    unsafe { function.delete() };
 
     // Clear the execution engine.
     // SAFETY: The execution engine release the module.
