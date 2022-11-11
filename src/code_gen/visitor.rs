@@ -116,21 +116,22 @@ impl Visitor for ExprAst {
                     "ifcond",
                 );
 
-                let first_block = match ctx.builder().get_insert_block() {
+                // Get the block that the builder position is currently in.
+                let cond_block = match ctx.builder().get_insert_block() {
                     Some(v) => v,
                     None => {
                         return Err("If statement must be in a block".to_string());
                     }
                 };
 
-                let function = first_block.get_parent().unwrap();
+                let function = cond_block.get_parent().unwrap();
 
                 // Append labels to the function.
                 let then_block = ctx.context().append_basic_block(function, "then"); // "then": label name
                 let else_block = ctx.context().append_basic_block(function, "else");
                 let merge_block = ctx.context().append_basic_block(function, "ifcont");
 
-                // Append the conditional branch to the `first_block` block.
+                // Append the conditional branch to the `cond_block` block.
                 // `then_block` and `else_block` are for generating the branch label names.
                 ctx.builder()
                     .build_conditional_branch(cond, then_block, else_block);
