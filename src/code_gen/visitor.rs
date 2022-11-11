@@ -173,6 +173,9 @@ impl Visitor for ExprAst {
                     let phi = ctx.builder().build_phi(ctx.context().f64_type(), "iftmp");
 
                     // Add the incoming values to the PHI node by appending them to the `merge_block` block.
+                    // `then_block` and `else_block` are provided for the builder to write down the labels of the previous blocks.
+                    // If the previous block is `then_block`, the value of `phi` is `then`.
+                    // If the previous block is `else_block`, the value of `phi` is `else_`.
                     phi.add_incoming(&[(&then, then_block), (&else_, else_block)]);
 
                     Ok(AnyValueEnum::FloatValue(
