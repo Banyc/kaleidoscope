@@ -1,4 +1,5 @@
 use inkwell::{
+    execution_engine::ExecutionEngine,
     module::Module,
     values::{FunctionValue, GenericValue},
 };
@@ -25,20 +26,13 @@ unsafe fn run_func<'ctx>(
     function: FunctionValue<'ctx>,
     args: &[&GenericValue<'ctx>],
 ) -> Result<GenericValue<'ctx>, Error> {
-    let undef_functions = undef_functions(module);
-
-    if undef_functions.len() > 0 {
-        return Err(Error::UndefFunctionsError(undef_functions));
-    }
-
     // SAFETY: The execution engine takes ownership of the module.
     let execution_engine = match module.create_execution_engine() {
         Ok(execution_engine) => execution_engine,
         Err(e) => return Err(Error::CreateExecutionEngineError(e.to_string())),
     };
 
-    // SAFETY: Undefined functions are checked above.
-    let value = execution_engine.run_function(function, args);
+    let res = run_func_with_exec_engine(&execution_engine, &module, function, args);
 
     // Clear the execution engine.
     // SAFETY: The execution engine release the module.
@@ -46,6 +40,24 @@ unsafe fn run_func<'ctx>(
         Ok(_) => (),
         Err(e) => return Err(Error::ReleaseModuleError(e.to_string())),
     }
+
+    res
+}
+
+unsafe fn run_func_with_exec_engine<'ctx>(
+    execution_engine: &ExecutionEngine<'ctx>,
+    module: &Module<'ctx>,
+    function: FunctionValue<'ctx>,
+    args: &[&GenericValue<'ctx>],
+) -> Result<GenericValue<'ctx>, Error> {
+    let undef_functions = undef_functions(module);
+
+    if undef_functions.len() > 0 {
+        return Err(Error::UndefFunctionsError(undef_functions));
+    }
+
+    // SAFETY: Undefined functions are checked above.
+    let value = execution_engine.run_function(function, args);
 
     Ok(value)
 }
@@ -60,6 +72,14 @@ pub enum Error {
 fn undef_functions(module: &Module) -> Vec<String> {
     let mut undef_functions = Vec::new();
     for function in module.get_functions() {
+        // if function.as_global_value().is_declaration() {
+        //     if ee
+        //         .get_function_address(function.get_name().to_str().unwrap())
+        //         .is_err()
+        //     {
+        //         undef_functions.push(function.get_name().to_str().unwrap().to_string());
+        //     }
+        // }
         if function.get_name().to_str().unwrap() == "putchard" && function.count_params() == 1 {
             continue;
         }
