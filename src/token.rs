@@ -15,6 +15,8 @@ pub enum Token {
     If,
     Then,
     Else,
+    For,
+    In,
 
     Unknown(char),
 }

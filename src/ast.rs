@@ -17,6 +17,13 @@ pub enum ExprAst {
         then: Box<ExprAst>,
         else_: Box<ExprAst>,
     },
+    For {
+        var_name: String,
+        start: Box<ExprAst>,
+        end: Box<ExprAst>,
+        step: Option<Box<ExprAst>>,
+        body: Box<ExprAst>,
+    },
 }
 
 /// - Learn more: <https://llvm.org/docs/tutorial/MyFirstLanguageFrontend/LangImpl02.html#the-abstract-syntax-tree-ast>

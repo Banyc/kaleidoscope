@@ -183,6 +183,110 @@ impl Visitor for ExprAst {
                     ))
                 }
             }
+            ExprAst::For {
+                var_name,
+                start,
+                end,
+                step,
+                body,
+            } => {
+                let preheader_block = match ctx.builder().get_insert_block() {
+                    Some(v) => v,
+                    None => {
+                        return Err("For statement must be in a block".to_string());
+                    }
+                };
+
+                let function = preheader_block.get_parent().unwrap();
+
+                let loop_block = ctx.context().append_basic_block(function, "loop");
+                let after_block = ctx.context().append_basic_block(function, "afterloop");
+
+                // Emit code to preheader_block.
+                let start = {
+                    ctx.builder().position_at_end(preheader_block);
+
+                    let start = start.code_gen(ctx)?;
+
+                    ctx.builder().build_unconditional_branch(loop_block);
+
+                    start.into_float_value()
+                };
+
+                // Emit code to loop_block.
+                let old_var = {
+                    ctx.builder().position_at_end(loop_block);
+
+                    let variable = ctx.builder().build_phi(ctx.context().f64_type(), &var_name);
+                    variable.add_incoming(&[(&start, preheader_block)]);
+
+                    // Within the loop, the variable is defined equal to the PHI node.
+                    // If it shadows an existing variable, we have to restore it, so save it now.
+                    let old_var = ctx.named_values_mut().insert(
+                        var_name.clone(),
+                        variable.as_basic_value().as_any_value_enum(),
+                    );
+
+                    // Generate body.
+                    let _ = body.code_gen(ctx)?;
+
+                    // Emit the step value.
+                    let step = match step {
+                        Some(step) => {
+                            let step = step.code_gen(ctx)?;
+
+                            // If no step was specified, use 1.0.
+                            step.into_float_value()
+                        }
+                        None => ctx.context().f64_type().const_float(1.0),
+                    };
+
+                    // Increment the variable.
+                    let next_var = ctx.builder().build_float_add(
+                        variable.as_basic_value().into_float_value(),
+                        step,
+                        "nextvar",
+                    );
+
+                    // Add a new entry to the PHI node for the backedge.
+                    variable.add_incoming(&[(&next_var, loop_block)]);
+
+                    // Compute the end condition.
+                    let end = end.code_gen(ctx)?;
+
+                    // Convert condition to a bool by comparing non-equal to 0.0.
+                    let end_cond = ctx.builder().build_float_compare(
+                        inkwell::FloatPredicate::ONE,
+                        end.into_float_value(),
+                        ctx.context().f64_type().const_float(0.0),
+                        "loopcond",
+                    );
+
+                    // Terminating the loop.
+                    ctx.builder()
+                        .build_conditional_branch(end_cond, loop_block, after_block);
+
+                    old_var
+                };
+
+                // Emit code to afterloop_block.
+                {
+                    ctx.builder().position_at_end(after_block);
+
+                    // Restore the unshadowed variable.
+                    if let Some(old_var) = old_var {
+                        ctx.named_values_mut().insert(var_name.clone(), old_var);
+                        eprintln!("{} is restored", var_name);
+                    } else {
+                        ctx.named_values_mut().remove(var_name);
+                    }
+
+                    // Loop always returns 0.0.
+                    Ok(AnyValueEnum::FloatValue(
+                        ctx.context().f64_type().const_float(0.0),
+                    ))
+                }
+            }
         }
     }
 }
@@ -487,6 +591,113 @@ ifcont:                                           ; preds = %else, %then
   ret double %iftmp
 }
 ",
+        );
+    }
+
+    #[test]
+    fn test_for_1() {
+        let function = FunctionAst {
+            prototype: PrototypeAst {
+                name: "foo".to_string(),
+                args: vec![],
+            },
+            body: ExprAst::For {
+                var_name: "i".to_string(),
+                start: Box::new(ExprAst::Number(2.0)),
+                end: Box::new(ExprAst::Binary {
+                    op: "<".to_string(),
+                    lhs: Box::new(ExprAst::Variable("i".to_string())),
+                    rhs: Box::new(ExprAst::Number(10.0)),
+                }),
+                step: None,
+                body: Box::new(ExprAst::Variable("i".to_string())),
+            },
+        };
+
+        let context = inkwell::context::Context::create();
+        let mut ctx = ModuleCtx::new("test", &context);
+        let value = function.code_gen(&mut ctx).unwrap();
+
+        assert_eq!(ctx.named_values().len(), 0);
+
+        let expected = "define double @foo() {
+entry:
+  br label %loop
+
+loop:                                             ; preds = %loop, %entry
+  %i = phi double [ 2.000000e+00, %entry ], [ %nextvar, %loop ]
+  %nextvar = fadd double %i, 1.000000e+00
+  %cmptmp = fcmp ult double %i, 1.000000e+01
+  %booltmp = uitofp i1 %cmptmp to double
+  %loopcond = fcmp one double %booltmp, 0.000000e+00
+  br i1 %loopcond, label %loop, label %afterloop
+
+afterloop:                                        ; preds = %loop
+  ret double 0.000000e+00
+}
+";
+
+        assert_eq!(
+            value.into_function_value().print_to_string().to_string(),
+            expected
+        );
+    }
+
+    #[test]
+    fn test_for_2() {
+        let function = FunctionAst {
+            prototype: PrototypeAst {
+                name: "foo".to_string(),
+                args: vec!["i".to_string()],
+            },
+            body: ExprAst::For {
+                var_name: "i".to_string(),
+                start: Box::new(ExprAst::Number(2.0)),
+                end: Box::new(ExprAst::Binary {
+                    op: "<".to_string(),
+                    lhs: Box::new(ExprAst::Variable("i".to_string())),
+                    rhs: Box::new(ExprAst::Number(10.0)),
+                }),
+                step: Some(Box::new(ExprAst::Number(3.0))),
+                body: Box::new(ExprAst::Variable("i".to_string())),
+            },
+        };
+
+        let context = inkwell::context::Context::create();
+        let mut ctx = ModuleCtx::new("test", &context);
+        let i_value = ctx.context().f64_type().const_float(1.0);
+        ctx.named_values_mut()
+            .insert("i".to_string(), AnyValueEnum::FloatValue(i_value));
+        let value = function.code_gen(&mut ctx).unwrap();
+
+        assert_eq!(
+            ctx.named_values()["i"]
+                .into_float_value()
+                .print_to_string()
+                .to_string(),
+            "double %0"
+        );
+
+        let expected = "define double @foo(double %0) {
+entry:
+  br label %loop
+
+loop:                                             ; preds = %loop, %entry
+  %i = phi double [ 2.000000e+00, %entry ], [ %nextvar, %loop ]
+  %nextvar = fadd double %i, 3.000000e+00
+  %cmptmp = fcmp ult double %i, 1.000000e+01
+  %booltmp = uitofp i1 %cmptmp to double
+  %loopcond = fcmp one double %booltmp, 0.000000e+00
+  br i1 %loopcond, label %loop, label %afterloop
+
+afterloop:                                        ; preds = %loop
+  ret double 0.000000e+00
+}
+";
+
+        assert_eq!(
+            value.into_function_value().print_to_string().to_string(),
+            expected
         );
     }
 

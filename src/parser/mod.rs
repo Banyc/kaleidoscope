@@ -170,11 +170,84 @@ impl<'stream> Parser<'stream> {
     }
 
     /// - ```text
+    ///   forexpr ::= 'for' identifier '=' expr ',' expr (',' expr)? 'in' expression
+    ///   ```
+    async fn parse_for_expr(&mut self) -> Result<ExprAst, ParserError> {
+        let Token::For = self.peek_token().await? else {
+            return Err(ParserError::ParserError(
+                "Expected `for` keyword.".to_string(),
+            ));
+        };
+        // Eat `for`.
+        self.take_token().await?;
+
+        let Token::Identifier(_) = self.peek_token().await? else {
+            return Err(ParserError::ParserError(
+                "Expected identifier after `for` keyword.".to_string(),
+            ));
+        };
+        let Token::Identifier(var_name) = self.take_token().await? else {
+            unreachable!();
+        };
+
+        let Token::Unknown('=') = self.peek_token().await? else {
+            return Err(ParserError::ParserError(
+                "Expected `=` after identifier.".to_string(),
+            ));
+        };
+        // Eat `=`.
+        self.take_token().await?;
+
+        let start = self.parse_expression().await?;
+
+        let Token::Unknown(',') = self.peek_token().await? else {
+            return Err(ParserError::ParserError(
+                "Expected `,` after start value.".to_string(),
+            ));
+        };
+        // Eat `,`.
+        self.take_token().await?;
+
+        let end = self.parse_expression().await?;
+
+        let step = match self.peek_token().await? {
+            Token::Unknown(',') => {
+                // Eat `,`.
+                self.take_token().await?;
+
+                let step = self.parse_expression().await?;
+
+                Some(step)
+            }
+            _ => None,
+        };
+
+        let Token::In = self.peek_token().await? else {
+            return Err(ParserError::ParserError(
+                "Expected `in` keyword after for-loop.".to_string(),
+            ));
+        };
+        // Eat `in`.
+        self.take_token().await?;
+
+        let body = self.parse_expression().await?;
+
+        Ok(ExprAst::For {
+            var_name,
+            start: Box::new(start),
+            end: Box::new(end),
+            step: step.map(Box::new),
+            body: Box::new(body),
+        })
+    }
+
+    /// - ```text
     ///   primary
     ///     ::= identifierexpr
     ///     ::= numberexpr
     ///     ::= parenexpr
     ///     ::= ifexpr
+    ///     ::= forexpr
     ///   ```
     #[async_recursion]
     async fn parse_primary(&mut self) -> Result<ExprAst, ParserError> {
@@ -183,6 +256,7 @@ impl<'stream> Parser<'stream> {
             Token::Identifier(_) => self.parse_identifier_expr().await,
             Token::Number(_) => self.parse_number_expr().await,
             Token::If => self.parse_if_expr().await,
+            Token::For => self.parse_for_expr().await,
             _ => Err(ParserError::ParserError(
                 "Unknown token when expecting an expression.".to_string(),
             )),
@@ -598,6 +672,60 @@ mod tests {
                     cond: Box::new(ExprAst::Number(1.2)),
                     then: Box::new(ExprAst::Number(3.4)),
                     else_: Box::new(ExprAst::Number(5.6)),
+                }
+            );
+            parser.parse_eof().await.unwrap();
+        };
+
+        executor::block_on(task);
+    }
+
+    #[test]
+    fn test_parse_for_expr_1() {
+        let mut char_stream = stream::iter("for i = 1, i < 10 in 42".chars());
+        let mut parser = Parser::from_char_stream(&mut char_stream);
+
+        let task = async {
+            let expr = parser.parse_for_expr().await.unwrap();
+            assert_eq!(
+                expr,
+                ExprAst::For {
+                    var_name: "i".to_string(),
+                    start: Box::new(ExprAst::Number(1.0)),
+                    end: Box::new(ExprAst::Binary {
+                        op: "<".to_string(),
+                        lhs: Box::new(ExprAst::Variable("i".to_string())),
+                        rhs: Box::new(ExprAst::Number(10.0)),
+                    }),
+                    step: None,
+                    body: Box::new(ExprAst::Number(42.0)),
+                }
+            );
+            parser.parse_eof().await.unwrap();
+        };
+
+        executor::block_on(task);
+    }
+
+    #[test]
+    fn test_parse_for_expr_2() {
+        let mut char_stream = stream::iter("for i = 1, i < 10, 2 in 42".chars());
+        let mut parser = Parser::from_char_stream(&mut char_stream);
+
+        let task = async {
+            let expr = parser.parse_for_expr().await.unwrap();
+            assert_eq!(
+                expr,
+                ExprAst::For {
+                    var_name: "i".to_string(),
+                    start: Box::new(ExprAst::Number(1.0)),
+                    end: Box::new(ExprAst::Binary {
+                        op: "<".to_string(),
+                        lhs: Box::new(ExprAst::Variable("i".to_string())),
+                        rhs: Box::new(ExprAst::Number(10.0)),
+                    }),
+                    step: Some(Box::new(ExprAst::Number(2.0))),
+                    body: Box::new(ExprAst::Number(42.0)),
                 }
             );
             parser.parse_eof().await.unwrap();

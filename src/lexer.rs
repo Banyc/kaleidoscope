@@ -45,6 +45,8 @@ impl<'stream> Lexer<'stream> {
                 "if" => Token::If,
                 "then" => Token::Then,
                 "else" => Token::Else,
+                "for" => Token::For,
+                "in" => Token::In,
                 _ => Token::Identifier(identifier),
             });
         }
