@@ -36,12 +36,14 @@ fn main() {
                 },
                 Err(e) => {
                     eprintln!("Error(parser): {:?}", e);
-                    match parser.skip_until_semicolon().await {
-                        Ok(_) => (),
-                        Err(e) => {
-                            eprintln!("Error(parser, recovery): {:?}", e);
-                        }
-                    };
+                    loop {
+                        match parser.skip_until_semicolon().await {
+                            Ok(_) => break,
+                            Err(e) => {
+                                eprintln!("Error(parser, recovery): {:?}", e);
+                            }
+                        };
+                    }
                     continue;
                 }
             };
