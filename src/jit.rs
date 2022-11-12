@@ -60,9 +60,32 @@ pub enum Error {
 fn undef_functions(module: &Module) -> Vec<String> {
     let mut undef_functions = Vec::new();
     for function in module.get_functions() {
+        if function.get_name().to_str().unwrap() == "putchard" && function.count_params() == 1 {
+            continue;
+        }
+        if function.get_name().to_str().unwrap() == "printd" && function.count_params() == 1 {
+            continue;
+        }
         if function.count_basic_blocks() == 0 {
             undef_functions.push(function.get_name().to_str().unwrap().to_string());
         }
     }
     undef_functions
 }
+
+#[no_mangle]
+pub extern "C" fn putchard(x: f64) -> f64 {
+    print!("{}", x as u8 as char);
+    x
+}
+
+#[no_mangle]
+pub extern "C" fn printd(x: f64) -> f64 {
+    println!("{}", x);
+    x
+}
+
+// Adding the functions above to a global array,
+// so Rust compiler won't remove them.
+#[used]
+static EXTERNAL_FNS: [extern "C" fn(f64) -> f64; 2] = [putchard, printd];
